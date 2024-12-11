@@ -1,0 +1,92 @@
+# .golangci.yml
+# A sane, balanced configuration for Go projects
+
+run:
+  # The timeout for any single linter
+  timeout: 5m
+  
+  # Include test files, but with some moderation
+  tests: true
+
+  # Optional: skip auto-generated files
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*\\.gen\\.go$"
+
+# Fundamental linters that provide broad, valuable insights
+linters:
+  enable:
+    # Code Quality and Potential Bug Detection
+    - errcheck       # Finds unchecked errors
+    - staticcheck    # Advanced static analysis
+    - govet          # Reports suspicious constructs
+    - gosec          # Finds security problems
+    
+    # Style and Formatting
+    - gofmt          # Ensures canonical gofmt style
+    - goimports      # Manages imports intelligently
+    
+    # Performance and Efficiency
+    - ineffassign    # Detects ineffective assignments
+    - prealloc       # Suggests slice preallocations
+    
+    # Design and Complexity Management
+    - gocritic       # Provides opinionated improvements
+    - gocyclo        # Checks cyclomatic complexity
+    - maintidx       # Calculates maintainability index
+
+  # Disable some overly aggressive or less useful defaults
+  disable:
+    - golint         # Deprecated in favor of staticcheck
+    - interfacer     # Suggests interface types
+    - typecheck      # Can be redundant with Go's compiler
+
+# Detailed configuration for specific linters
+linters-settings:
+  # Complexity management
+  gocyclo:
+    min-complexity: 15  # Warn on functions more complex than this
+
+  # Security checks
+  gosec:
+    excludes:
+      - G101  # Potential hardcoded credentials (common false positive)
+      - G404  # Weak random number generation (might be intentional)
+
+  # Code complexity and maintainability
+  gocritic:
+    enabled-checks:
+      - commentFormatting
+      - dupImport
+      - exitAfterDefer
+      - deprecatedComment
+
+  # Static analysis configuration
+  staticcheck:
+    # Focus on most important static analysis checks
+    checks: 
+      - "SA*"    # All staticcheck analyzers
+      - "ST*"    # Style checks
+      - "-SA1019" # Ignore deprecation warnings (can be noisy)
+
+# Issue handling and exclusions
+issues:
+  # Exclude rules for specific scenarios
+  exclude-rules:
+    # More lenient rules for test files
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+        - gocyclo
+
+    # Ignore certain error checks in generated code
+    - path: (^internal/.*|^pkg/.*)
+      text: "not checked"
+
+  # Prevent overwhelming output
+  max-issues-per-linter: 50
+  max-same-issues: 3
+
+  # Fail the linter if too many issues are found
+  new-from-rev: HEAD~1
