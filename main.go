@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
-	"todo/db"
+	"log"
+	"os"
+	database "todo/db"
 
 	_ "github.com/glebarez/go-sqlite"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/urfave/cli/v2"
 )
 
 type model struct {
@@ -16,11 +19,56 @@ type model struct {
 }
 
 func main() {
-	db := db.Open()
-	defer db.Close()
-	row := db.QueryRow("select sqlite_version()")
+	app := &cli.App{
+		Name:  "todo",
+		Usage: "Create and manage todo lists!",
+		Commands: []*cli.Command{
+			{
+				Name:      "list",
+				Aliases:   []string{"a"},
+				Usage:     "List all of the todo lists you have",
+				Args:      true,
+				ArgsUsage: "<optional name of list>",
+				Action: func(cCtx *cli.Context) error {
+					db := database.Open()
+					defer db.Close()
 
-	fmt.Println(row)
+					table, err := database.ListTodos(db)
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					table.Print()
+					return nil
+				},
+			},
+			{
+				Name:    "create",
+				Aliases: []string{"c"},
+				Usage:   "Create a new top level todo list",
+				Action: func(cCtx *cli.Context) error {
+					title := cCtx.Args().First()
+					if title == "" {
+						return cli.Exit("Useage: todo create <title>", 2)
+					}
+
+					db := database.Open()
+					defer db.Close()
+
+					err := database.CreateTodo(db, title)
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					return nil
+				},
+			},
+		},
+	}
+
+	if err := app.Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func initialModel() model {

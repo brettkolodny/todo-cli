@@ -2,12 +2,34 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	_ "github.com/glebarez/go-sqlite"
 )
+
+type TodoTableRow struct {
+	Title     string
+	CreatedAt time.Time
+}
+
+type TodoTable []TodoTableRow
+
+func (table TodoTable) Print() {
+	var builder strings.Builder
+
+	builder.WriteString("  | Title \t Created at\n")
+
+	for i, row := range table {
+		builder.WriteString(fmt.Sprintf("%d | %s \t %s\n", i, row.Title, row.CreatedAt.String()))
+	}
+
+	fmt.Println(builder.String())
+}
 
 // Open the DB at ~/.config/todo.db or the path specified in TODO_DB_PATH
 // If the DB did not exist before this call then create the needed tables
@@ -28,12 +50,30 @@ func Open() *sql.DB {
 	}
 
 	if !alreadyExisted {
-		createTableSql := `CREATE TABLE IF NOT EXISTS todos (
-	id integer PRIMARY KEY autoincrement,
-	created_at datetime DEFAULT CURRENT_TIMESTAMP,
-	title text NOT NULL)`
+		createTablesSql := `
+-- Create the main todos table first since it will be referenced by entries
+CREATE TABLE todos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    title TEXT NOT NULL
+);
 
-		_, err = db.Exec(createTableSql)
+-- Create the entries table with a foreign key relationship to todos
+CREATE TABLE entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    title TEXT NOT NULL,
+    completed BOOLEAN DEFAULT FALSE,
+    todo_id INTEGER,
+    FOREIGN KEY (todo_id) REFERENCES todos(id)
+        ON DELETE CASCADE  -- Automatically delete entries when their todo is deleted
+        ON UPDATE CASCADE  -- Automatically update entries when their todo's ID changes
+);
+
+-- Create an index to improve query performance when looking up entries by todo
+CREATE INDEX idx_entries_todo_id ON entries(todo_id);`
+
+		_, err = db.Exec(createTablesSql)
 		if err != nil {
 			log.Fatalf("Could not create todos table: %v", err)
 		}
@@ -43,13 +83,56 @@ func Open() *sql.DB {
 	return db
 }
 
+// Create a todo list with the given title
+func CreateTodo(db *sql.DB, title string) error {
+	stmt, err := db.Prepare("INSERT INTO todos (title) VALUES (?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(title); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// List all todo lists within the database
+func ListTodos(db *sql.DB) (TodoTable, error) {
+	query := "SELECT title, created_at FROM todos"
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return TodoTable{}, err
+	}
+	defer rows.Close()
+
+	var todoRows []TodoTableRow
+	for rows.Next() {
+		var title string
+		var createdAt time.Time
+
+		if err := rows.Scan(&title, &createdAt); err != nil {
+			return TodoTable{}, err
+		}
+
+		row := TodoTableRow{
+			Title:     title,
+			CreatedAt: createdAt,
+		}
+
+		todoRows = append(todoRows, row)
+	}
+
+	return todoRows, nil
+}
+
 // Check if a file exists at the given path.
 // This feels like something that may alread exist in the stdlib so it may be worth investigating
 // if it can be removed for something built in.
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
-
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return false
 		} else {
