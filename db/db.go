@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +12,16 @@ import (
 
 	_ "github.com/glebarez/go-sqlite"
 )
+
+const (
+	singleBullet    = "─"
+	startingBullet  = "┌╴"
+	connectorBullet = "├╴"
+	endingBullet    = "└╴"
+)
+
+//go:embed sql/*.sql
+var sqlFiles embed.FS
 
 type TodoTableRow struct {
 	Title     string
@@ -22,10 +33,23 @@ type TodoTable []TodoTableRow
 func (table TodoTable) Print() {
 	var builder strings.Builder
 
-	builder.WriteString("  | Title \t Created at\n")
+	if len(table) == 1 {
+		row := table[0]
+		builder.WriteString(fmt.Sprintf("%s %s\n", singleBullet, row.Title))
+	} else {
+		for i, row := range table {
+			var bullet string
+			switch i {
+			case 0:
+				bullet = startingBullet
+			case len(table) - 1:
+				bullet = endingBullet
+			default:
+				bullet = connectorBullet
+			}
 
-	for i, row := range table {
-		builder.WriteString(fmt.Sprintf("%d | %s \t %s\n", i, row.Title, row.CreatedAt.String()))
+			builder.WriteString(fmt.Sprintf("%s %s\n", bullet, row.Title))
+		}
 	}
 
 	fmt.Println(builder.String())
@@ -50,34 +74,7 @@ func Open() *sql.DB {
 	}
 
 	if !alreadyExisted {
-		createTablesSql := `
--- Create the main todos table first since it will be referenced by entries
-CREATE TABLE todos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    title TEXT NOT NULL
-);
-
--- Create the entries table with a foreign key relationship to todos
-CREATE TABLE entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    title TEXT NOT NULL,
-    completed BOOLEAN DEFAULT FALSE,
-    todo_id INTEGER,
-    FOREIGN KEY (todo_id) REFERENCES todos(id)
-        ON DELETE CASCADE  -- Automatically delete entries when their todo is deleted
-        ON UPDATE CASCADE  -- Automatically update entries when their todo's ID changes
-);
-
--- Create an index to improve query performance when looking up entries by todo
-CREATE INDEX idx_entries_todo_id ON entries(todo_id);`
-
-		_, err = db.Exec(createTablesSql)
-		if err != nil {
-			log.Fatalf("Could not create todos table: %v", err)
-		}
-
+		setupDb(db)
 	}
 
 	return db
@@ -162,5 +159,17 @@ func getPath() string {
 		return filepath.Join(dirname, ".config", "todo", "todo.db")
 	} else {
 		return db_path
+	}
+}
+
+func setupDb(db *sql.DB) {
+	createTablesSql, err := sqlFiles.ReadFile("sql/setup.sql")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec(string(createTablesSql))
+	if err != nil {
+		log.Fatalf("Could not create todos table: %v", err)
 	}
 }

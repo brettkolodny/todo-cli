@@ -14,6 +14,7 @@ func OpenTestDB() *sql.DB {
 		log.Fatal(err)
 	}
 
+	setupDb(db)
 	return db
 }
 

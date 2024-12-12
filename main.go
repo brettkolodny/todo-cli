@@ -25,7 +25,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:      "list",
-				Aliases:   []string{"a"},
+				Aliases:   []string{"l"},
 				Usage:     "List all of the todo lists you have",
 				Args:      true,
 				ArgsUsage: "<optional name of list>",
