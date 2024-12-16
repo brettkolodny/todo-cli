@@ -29,16 +29,29 @@ func main() {
 				Usage:     "List all of the todo lists you have",
 				Args:      true,
 				ArgsUsage: "<optional name of list>",
-				Action: func(cCtx *cli.Context) error {
+				Action: func(ctx *cli.Context) error {
 					db := database.Open()
 					defer db.Close()
 
-					table, err := database.ListTodos(db)
-					if err != nil {
-						log.Fatal(err)
-					}
+					switch ctx.NArg() {
+					case 0:
+						table, err := database.ListTodos(db)
+						if err != nil {
+							log.Fatal(err)
+						}
 
-					table.Print()
+						table.Print()
+
+					case 1:
+						todo := ctx.Args().First()
+
+						todoList, err := database.ListEntries(db, todo)
+						if err != nil {
+							log.Fatal(err)
+						}
+
+						todoList.Print()
+					}
 					return nil
 				},
 			},
@@ -46,18 +59,42 @@ func main() {
 				Name:    "create",
 				Aliases: []string{"c"},
 				Usage:   "Create a new top level todo list",
-				Action: func(cCtx *cli.Context) error {
-					title := cCtx.Args().First()
-					if title == "" {
+				Args:    true,
+				Action: func(ctx *cli.Context) error {
+					switch ctx.NArg() {
+					case 0:
 						return cli.Exit("Useage: todo create <title>", 2)
-					}
 
-					db := database.Open()
-					defer db.Close()
+					case 1:
+						title := ctx.Args().First()
+						if title == "" {
+							return cli.Exit("Useage: todo create <title>", 2)
+						}
 
-					err := database.CreateTodo(db, title)
-					if err != nil {
-						log.Fatal(err)
+						db := database.Open()
+						defer db.Close()
+
+						err := database.CreateTodo(db, title)
+						if err != nil {
+							log.Fatal(err)
+						}
+
+					case 2:
+						todo, entry := ctx.Args().Get(0), ctx.Args().Get(1)
+						if todo == "" && entry != "" || todo == "" && entry == "" {
+							return cli.Exit("Useage: todo create <title> <entry>", 2)
+						}
+
+						db := database.Open()
+						defer db.Close()
+
+						err := database.InsertEntry(db, todo, entry)
+						if err != nil {
+							log.Fatal(err)
+						}
+
+					default:
+						return cli.Exit("Useage: todo create <title>", 2)
 					}
 
 					return nil

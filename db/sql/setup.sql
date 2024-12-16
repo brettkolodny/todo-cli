@@ -2,7 +2,8 @@
 CREATE TABLE todos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    title TEXT NOT NULL
+    title TEXT NOT NULL,
+    CONSTRAINT unique_todo_title UNIQUE (title)  -- Named constraint for better error handling
 );
 
 -- Create the entries table with a foreign key relationship to todos

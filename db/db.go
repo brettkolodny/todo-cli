@@ -2,7 +2,7 @@ package db
 
 import (
 	"database/sql"
-	"embed"
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
@@ -20,15 +20,78 @@ const (
 	endingBullet    = "└╴"
 )
 
-//go:embed sql/*.sql
-var sqlFiles embed.FS
+var (
+	//go:embed sql/setup.sql
+	setupSql string
 
-type TodoTableRow struct {
+	//go:embed sql/get_todos.sql
+	getTodosSql string
+
+	//go:embed sql/get_entries.sql
+	getEntriesSql string
+
+	//go:embed sql/insert_todo.sql
+	insertTodoSql string
+
+	//go:embed sql/insert_entry.sql
+	insertEntrySql string
+)
+
+type TodosTableRow struct {
 	Title     string
 	CreatedAt time.Time
 }
 
-type TodoTable []TodoTableRow
+type TodoTable []TodosTableRow
+
+type TodoEntry struct {
+	Title     string
+	Completed bool
+}
+
+type TodoList struct {
+	Title   string
+	Entries []TodoEntry
+}
+
+func (list TodoList) Print() {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("%s\n", list.Title))
+
+	if len(list.Entries) == 1 {
+		row := list.Entries[0]
+		var checkBox string
+		if row.Completed {
+			checkBox = "[x]"
+		} else {
+			checkBox = "[ ]"
+		}
+		builder.WriteString(fmt.Sprintf("%s %s %s\n", singleBullet, checkBox, row.Title))
+	} else {
+		for i, row := range list.Entries {
+			var bullet string
+			switch i {
+			case 0:
+				bullet = startingBullet
+			case len(list.Entries) - 1:
+				bullet = endingBullet
+			default:
+				bullet = connectorBullet
+			}
+
+			var checkBox string
+			if row.Completed {
+				checkBox = "[x]"
+			} else {
+				checkBox = "[ ]"
+			}
+
+			builder.WriteString(fmt.Sprintf("%s %s %s\n", bullet, checkBox, row.Title))
+		}
+	}
+
+	fmt.Println(builder.String())
+}
 
 func (table TodoTable) Print() {
 	var builder strings.Builder
@@ -82,7 +145,7 @@ func Open() *sql.DB {
 
 // Create a todo list with the given title
 func CreateTodo(db *sql.DB, title string) error {
-	stmt, err := db.Prepare("INSERT INTO todos (title) VALUES (?)")
+	stmt, err := db.Prepare(insertTodoSql)
 	if err != nil {
 		return err
 	}
@@ -97,15 +160,13 @@ func CreateTodo(db *sql.DB, title string) error {
 
 // List all todo lists within the database
 func ListTodos(db *sql.DB) (TodoTable, error) {
-	query := "SELECT title, created_at FROM todos"
-
-	rows, err := db.Query(query)
+	rows, err := db.Query(getTodosSql)
 	if err != nil {
 		return TodoTable{}, err
 	}
 	defer rows.Close()
 
-	var todoRows []TodoTableRow
+	var todoRows []TodosTableRow
 	for rows.Next() {
 		var title string
 		var createdAt time.Time
@@ -114,15 +175,55 @@ func ListTodos(db *sql.DB) (TodoTable, error) {
 			return TodoTable{}, err
 		}
 
-		row := TodoTableRow{
+		row := TodosTableRow{
 			Title:     title,
 			CreatedAt: createdAt,
 		}
 
 		todoRows = append(todoRows, row)
 	}
+	if err := rows.Err(); err != nil {
+		return TodoTable{}, err
+	}
 
 	return todoRows, nil
+}
+
+// List
+func ListEntries(db *sql.DB, todoName string) (TodoList, error) {
+	rows, err := db.Query(getEntriesSql, todoName)
+	if err != nil {
+		return TodoList{}, err
+	}
+
+	var entries []TodoEntry
+	for rows.Next() {
+		var title string
+		var completed bool
+
+		if err := rows.Scan(&title, &completed); err != nil {
+			return TodoList{}, err
+		}
+
+		entries = append(entries, TodoEntry{Title: title, Completed: completed})
+	}
+
+	return TodoList{Title: todoName, Entries: entries}, nil
+}
+
+// List
+func InsertEntry(db *sql.DB, todoName string, title string) error {
+	stmt, err := db.Prepare(insertEntrySql)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(todoName, title); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Check if a file exists at the given path.
@@ -163,12 +264,7 @@ func getPath() string {
 }
 
 func setupDb(db *sql.DB) {
-	createTablesSql, err := sqlFiles.ReadFile("sql/setup.sql")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Exec(string(createTablesSql))
+	_, err := db.Exec(setupSql)
 	if err != nil {
 		log.Fatalf("Could not create todos table: %v", err)
 	}
